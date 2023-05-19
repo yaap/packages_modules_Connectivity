@@ -42,7 +42,6 @@ import android.compat.annotation.UnsupportedAppUsage;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
-import android.content.pm.SpecialRuntimePermAppUtils;
 import android.net.ConnectivityDiagnosticsManager.DataStallReport.DetectionMethod;
 import android.net.IpSecManager.UdpEncapsulationSocket;
 import android.net.SocketKeepalive.Callback;
@@ -3364,12 +3363,6 @@ public class ConnectivityManager {
      */
     public void reportNetworkConnectivity(@Nullable Network network, boolean hasConnectivity) {
         printStackTrace();
-
-        if (SpecialRuntimePermAppUtils.isInternetCompatEnabled()) {
-            // caller doesn't have INTERNET, but expects to always have it
-            return;
-        }
-
         try {
             mService.reportNetworkConnectivity(network, hasConnectivity);
         } catch (RemoteException e) {
