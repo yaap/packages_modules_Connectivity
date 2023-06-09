@@ -19,7 +19,6 @@ package android.net;
 import android.annotation.SystemApi;
 import android.app.SystemServiceRegistry;
 import android.content.Context;
-import android.content.pm.SpecialRuntimePermAppUtils;
 
 /**
  * Class for performing registration for all core connectivity services.
@@ -46,11 +45,7 @@ public final class ConnectivityFrameworkInitializer {
                 ConnectivityManager.class,
                 (context, serviceBinder) -> {
                     IConnectivityManager icm = IConnectivityManager.Stub.asInterface(serviceBinder);
-                    if (SpecialRuntimePermAppUtils.isInternetCompatEnabled()) {
-                        return new ConnectivityManagerInternetCompat(context, icm);
-                    } else {
-                        return new ConnectivityManager(context, icm);
-                    }
+                    return new ConnectivityManager(context, icm);
                 }
         );
 
