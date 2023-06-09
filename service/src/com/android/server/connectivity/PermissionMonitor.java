@@ -392,11 +392,6 @@ public class PermissionMonitor {
     public synchronized void startMonitoring() {
         log("Monitoring");
 
-        mPackageManager.addOnPermissionsChangeListener(uid -> {
-            // traffic permissions are INTERNET and UPDATE_DEVICE_STATS
-            sendPackagePermissionsForUid(uid, getTrafficPermissionForUid(uid));
-        });
-
         final Context userAllContext = mContext.createContextAsUser(UserHandle.ALL, 0 /* flags */);
         final IntentFilter intentFilter = new IntentFilter();
         intentFilter.addAction(Intent.ACTION_PACKAGE_ADDED);
@@ -572,7 +567,7 @@ public class PermissionMonitor {
         mUsersTrafficPermissions.put(user, addedUserAppIds);
         // Generate appIds from all users and send result to netd.
         final SparseIntArray appIds = makeAppIdsTrafficPermForAllUsers();
-        sendUidsTrafficPermission(user.getIdentifier(), appIds);
+        sendAppIdsTrafficPermission(appIds);
 
         // Log user added
         mPermissionUpdateLogs.log("New user(" + user.getIdentifier() + ") added: nPerm uids="
@@ -620,7 +615,7 @@ public class PermissionMonitor {
                 appIds.put(appId, PERMISSION_UNINSTALLED);
             }
         }
-        sendUidsTrafficPermission(user.getIdentifier(), appIds);
+        sendAppIdsTrafficPermission(appIds);
 
         // Log user removed
         mPermissionUpdateLogs.log("User(" + user.getIdentifier() + ") removed: nPerm uids="
@@ -740,25 +735,16 @@ public class PermissionMonitor {
         }
     }
 
-    private synchronized int getUidTrafficPermission(final int uid) {
-        final int userId = UserHandle.getUserId(uid);
-
+    private synchronized int getAppIdTrafficPermission(int appId) {
         int permission = PERMISSION_NONE;
         boolean installed = false;
-
         for (UserHandle user : mUsersTrafficPermissions.keySet()) {
-            if (user.getIdentifier() != userId) {
-                continue;
-            }
-
             final SparseIntArray userApps = mUsersTrafficPermissions.get(user);
-            final int appId = UserHandle.getAppId(uid);
             final int appIdx = userApps.indexOfKey(appId);
             if (appIdx >= 0) {
                 permission |= userApps.valueAt(appIdx);
                 installed = true;
             }
-            break;
         }
         return installed ? permission : PERMISSION_UNINSTALLED;
     }
@@ -776,8 +762,8 @@ public class PermissionMonitor {
         updateAppIdTrafficPermission(uid);
         // Get the appId permission from all users then send the latest permission to netd.
         final int appId = UserHandle.getAppId(uid);
-        final int uidTrafficPerm = getUidTrafficPermission(uid);
-        sendPackagePermissionsForUid(uid, uidTrafficPerm);
+        final int appIdTrafficPerm = getAppIdTrafficPermission(appId);
+        sendPackagePermissionsForAppId(appId, appIdTrafficPerm);
 
         final int currentPermission = mUidToNetworkPerm.get(uid, PERMISSION_NONE);
         final int permission = highestPermissionForUid(uid, currentPermission, packageName);
@@ -807,7 +793,7 @@ public class PermissionMonitor {
         mPermissionUpdateLogs.log("Package add: name=" + packageName + ", uid=" + uid
                 + ", nPerm=(" + permissionToString(permission) + "/"
                 + permissionToString(currentPermission) + ")"
-                + ", tPerm=" + permissionToString(uidTrafficPerm));
+                + ", tPerm=" + permissionToString(appIdTrafficPerm));
     }
 
     private int highestUidNetworkPermission(int uid) {
@@ -839,8 +825,8 @@ public class PermissionMonitor {
         updateAppIdTrafficPermission(uid);
         // Get the appId permission from all users then send the latest permission to netd.
         final int appId = UserHandle.getAppId(uid);
-        final int uidTrafficPerm = getUidTrafficPermission(uid);
-        sendPackagePermissionsForUid(uid, uidTrafficPerm);
+        final int appIdTrafficPerm = getAppIdTrafficPermission(appId);
+        sendPackagePermissionsForAppId(appId, appIdTrafficPerm);
 
         // If the newly-removed package falls within some VPN's uid range, update Netd with it.
         // This needs to happen before the mUidToNetworkPerm update below, since
@@ -860,7 +846,7 @@ public class PermissionMonitor {
         mPermissionUpdateLogs.log("Package remove: name=" + packageName + ", uid=" + uid
                 + ", nPerm=(" + permissionToString(permission) + "/"
                 + permissionToString(currentPermission) + ")"
-                + ", tPerm=" + permissionToString(uidTrafficPerm));
+                + ", tPerm=" + permissionToString(appIdTrafficPerm));
 
         if (permission != currentPermission) {
             final SparseIntArray apps = new SparseIntArray();
@@ -1112,17 +1098,14 @@ public class PermissionMonitor {
      * @hide
      */
     @VisibleForTesting
-    void sendPackagePermissionsForUid(int uid, int permissions) {
-        int userId = UserHandle.getUserId(uid);
-        int appId = UserHandle.getAppId(uid);
-
+    void sendPackagePermissionsForAppId(int appId, int permissions) {
         SparseIntArray netdPermissionsAppIds = new SparseIntArray();
         netdPermissionsAppIds.put(appId, permissions);
         if (hasSdkSandbox(appId)) {
             int sdkSandboxAppId = sProcessShim.toSdkSandboxUid(appId);
             netdPermissionsAppIds.put(sdkSandboxAppId, permissions);
         }
-        sendUidsTrafficPermission(userId, netdPermissionsAppIds);
+        sendAppIdsTrafficPermission(netdPermissionsAppIds);
     }
 
     /**
@@ -1134,7 +1117,7 @@ public class PermissionMonitor {
      * @hide
      */
     @VisibleForTesting
-    void sendUidsTrafficPermission(final int userId, SparseIntArray netdPermissionsAppIds) {
+    void sendAppIdsTrafficPermission(SparseIntArray netdPermissionsAppIds) {
         final ArrayList<Integer> allPermissionAppIds = new ArrayList<>();
         final ArrayList<Integer> internetPermissionAppIds = new ArrayList<>();
         final ArrayList<Integer> updateStatsPermissionAppIds = new ArrayList<>();
@@ -1168,39 +1151,27 @@ public class PermissionMonitor {
             if (allPermissionAppIds.size() != 0) {
                 mBpfNetMaps.setNetPermForUids(
                         PERMISSION_INTERNET | PERMISSION_UPDATE_DEVICE_STATS,
-                        appIdListToUidArray(userId, allPermissionAppIds));
+                        toIntArray(allPermissionAppIds));
             }
             if (internetPermissionAppIds.size() != 0) {
                 mBpfNetMaps.setNetPermForUids(PERMISSION_INTERNET,
-                        appIdListToUidArray(userId, internetPermissionAppIds));
+                        toIntArray(internetPermissionAppIds));
             }
             if (updateStatsPermissionAppIds.size() != 0) {
                 mBpfNetMaps.setNetPermForUids(PERMISSION_UPDATE_DEVICE_STATS,
-                        appIdListToUidArray(userId, updateStatsPermissionAppIds));
+                        toIntArray(updateStatsPermissionAppIds));
             }
             if (noPermissionAppIds.size() != 0) {
                 mBpfNetMaps.setNetPermForUids(PERMISSION_NONE,
-                        appIdListToUidArray(userId, noPermissionAppIds));
+                        toIntArray(noPermissionAppIds));
             }
             if (uninstalledAppIds.size() != 0) {
                 mBpfNetMaps.setNetPermForUids(PERMISSION_UNINSTALLED,
-                        appIdListToUidArray(userId, uninstalledAppIds));
+                        toIntArray(uninstalledAppIds));
             }
         } catch (RemoteException | ServiceSpecificException e) {
             Log.e(TAG, "Pass appId list of special permission failed." + e);
         }
-    }
-
-    private static int[] appIdListToUidArray(int userId, ArrayList<Integer> appIds) {
-        final int cnt = appIds.size();
-        int[] array = new int[cnt];
-
-        for (int i = 0; i < cnt; ++i) {
-            int appId = appIds.get(i).intValue();
-            array[i] = UserHandle.getUid(userId, appId);
-        }
-
-        return array;
     }
 
     /** Should only be used by unit tests */
