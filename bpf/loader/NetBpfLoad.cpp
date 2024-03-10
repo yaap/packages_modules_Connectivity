@@ -901,7 +901,7 @@ static int createMaps(ElfObject& elfObj, vector<struct bpf_map_def>& md, vector<
               .max_entries = max_entries,
               .map_flags = sanitizeMapFlags(md[i].map_flags),
             };
-            if (isAtLeastKernelVersion(4, 15))
+            if (isAtLeastKernelVersion(4, 14, 0))
                 strlcpy(req.map_name, md[i].name(), sizeof(req.map_name));
 
             bool haveBtf = btf && isBtfSupported(type);
@@ -1103,7 +1103,7 @@ static int loadCodeSections(ElfObject& elfObj, vector<codeSection>& cs, const st
               .log_buf = ptr_to_u64(log_buf),
               .expected_attach_type = cs[i].prog_def->attach_type,
             };
-            if (isAtLeastKernelVersion(4, 15))
+            if (isAtLeastKernelVersion(4, 14, 0))
                 strlcpy(req.prog_name, cs[i].prog_def->name(), sizeof(req.prog_name));
             fd.reset(bpf(BPF_PROG_LOAD, req));
 
@@ -1795,12 +1795,14 @@ static int doLoad(char** argv, char * const envp[]) {
         //  kernel does not have CONFIG_BPF_JIT=y)
         // BPF_JIT is required by R VINTF (which means 4.14/4.19/5.4 kernels),
         // but 4.14/4.19 were released with P & Q, and only 5.4 is new in R+.
-        if (!writeFile("/proc/sys/net/core/bpf_jit_enable", "1\n")) return 24;
+        if (!writeFile("/proc/sys/net/core/bpf_jit_enable", "1\n") &&
+            android::bpf::isAtLeastKernelVersion(4, 14, 0)) return 24;
 
         // Enable JIT kallsyms export for privileged users only
         // (Note: this (open) will fail with ENOENT 'No such file or directory' if
         //  kernel does not have CONFIG_HAVE_EBPF_JIT=y)
-        if (!writeFile("/proc/sys/net/core/bpf_jit_kallsyms", "1\n")) return 25;
+        if (!writeFile("/proc/sys/net/core/bpf_jit_kallsyms", "1\n") &&
+            android::bpf::isAtLeastKernelVersion(4, 14, 0)) return 25;
     }
 
     // Create all the pin subdirectories
