@@ -32,7 +32,7 @@ int libnetd_updatable_init(const char* cg2_path) {
     android::base::Result<void> ret = sBpfHandler.init(cg2_path);
     if (!ret.ok()) {
         LOG(ERROR) << __func__ << ": Failed: " << ret.error().message();
-        abort();
+        return -ret.error().code();
     }
     return 0;
 }
