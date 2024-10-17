@@ -2045,6 +2045,7 @@ public class BpfNetMaps {
         }
 
         final int appId = UserHandle.getAppId(uid);
+        if (sUidPermissionMap == null) return PERMISSION_INTERNET;
         try {
             // Key of uid permission map is appId
             // TODO: Rename map name
