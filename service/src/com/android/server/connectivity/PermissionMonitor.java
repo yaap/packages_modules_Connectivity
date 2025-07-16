@@ -1324,9 +1324,13 @@ public class PermissionMonitor {
         }
 
         if (isAtLeastB() && !mBpfNetMaps.isPermissionPropagationEnabled()) {
-            mBpfNetMaps.removeUidFromLocalNetBlockMap(uid);
-            if (hasSdkSandbox(uid)) mBpfNetMaps.removeUidFromLocalNetBlockMap(
-                    Process.toSdkSandboxUid(uid));
+            try {
+                mBpfNetMaps.removeUidFromLocalNetBlockMap(uid);
+                if (hasSdkSandbox(uid)) mBpfNetMaps.removeUidFromLocalNetBlockMap(
+                        Process.toSdkSandboxUid(uid));
+            } catch (NullPointerException e) {
+                Log.w(TAG, "BpfNetMaps.removeUidFromLocalNetBlockMap failed for UID " + uid + ": map is null");
+            }
         }
 
         // If the newly-removed package falls within some VPN's uid range, update Netd with it.
@@ -1335,6 +1339,7 @@ public class PermissionMonitor {
         // mUidToNetworkPerm to check if the package can bypass VPN.
         updateVpnUid(uid, false /* add */);
         updateLockdownUid(uid, false /* add */);
+
         // If the package has been removed from all users on the device, clear it form mAllApps.
         if (mPackageManager.getNameForUid(uid) == null) {
             mAllApps.remove(appId);
@@ -1373,6 +1378,7 @@ public class PermissionMonitor {
             }
         }
     }
+
 
     private static int getNetdPermissionMask(String[] requestedPermissions,
                                              int[] requestedPermissionsFlags) {
